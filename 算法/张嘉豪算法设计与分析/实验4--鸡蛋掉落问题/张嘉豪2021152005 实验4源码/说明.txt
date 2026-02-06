@@ -1,0 +1,10 @@
+dichotomy为二分搜索优化文件
+
+dp_memo为备忘录优化文件
+
+egg_dp为原始动态规划文件
+
+SuperEggDrop为重新定义状态转移优化
+Super_space是在此基础上对空间优化
+
+test文件对dp_memo进行测试,固定鸡蛋数k=10,100,n取10,100,1000,10000,分析算法效率

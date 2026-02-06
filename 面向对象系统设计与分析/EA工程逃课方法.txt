@@ -1,0 +1,119 @@
+EA主界面——查看——编写脚本——新建正常组——新建三个JS，命名随意，按顺序导入下面三段代码，按照实际情况修改作者名字和具体日期，最后按顺序运行即可
+
+
+代码1：
+!INC Local Scripts.EAConstants-JScript
+
+function tryBump(tbl, col) {
+  try {
+    Repository.Execute('UPDATE ['+tbl+'] SET ['+col+'] = DateAdd("yyyy",1,['+col+']) WHERE Year(['+col+']) = 2024');
+    Session.Output('OK  ' + tbl + '.' + col + '  →  +1y');
+  } catch(e) {
+    Session.Output('Skip ' + tbl + '.' + col + '  (' + e.description + ')');
+  }
+}
+
+function bumpYear_2024_to_2025_JET() {
+  // 元素（最重要）
+  tryBump('t_object', 'CreatedDate');
+  tryBump('t_object', 'ModifiedDate');
+
+  // 图表（有些库有，有些没有）
+  tryBump('t_diagram', 'CreatedDate');
+  tryBump('t_diagram', 'ModifiedDate');
+
+  // 维护/问题（如使用到）
+  tryBump('t_maint', 'DateRaised');
+  tryBump('t_maint', 'DateResolved');
+
+  // 维护日志（如使用到）
+  tryBump('t_maintlog', 'LogDate');
+
+  // 资源计划（如使用到）
+  tryBump('t_resource', 'DateStart');
+  tryBump('t_resource', 'DateEnd');
+
+  // 测试（如使用到）
+  tryBump('t_objecttests', 'DateRun');
+
+  Session.Output('完成：已对存在的日期列做 +1 年。连接线 t_connector 在此库中无日期列，已跳过。');
+}
+
+bumpYear_2024_to_2025_JET();
+
+
+代码2：
+!INC Local Scripts.EAConstants-JScript
+
+// 将 [tbl].[col] 中 Day=oldDay 的日期改为 newDay（保留原有时分秒）
+function bumpDayKeepTime(tbl, col, oldDay, newDay) {
+  // DateSerial(年,月,新日) 生成新日期，再加回原时间部分：([col] - DateValue([col]))
+  var sql = 'UPDATE [' + tbl + '] \
+             SET [' + col + '] = DateSerial(Year([' + col + ']), Month([' + col + ']), ' + newDay + ') \
+                               + ([' + col + '] - DateValue([' + col + '])) \
+             WHERE Day([' + col + ']) = ' + oldDay;
+  try {
+    Repository.Execute(sql);
+    Session.Output('OK  ' + tbl + '.' + col + ' : ' + oldDay + ' → ' + newDay);
+  } catch(e) {
+    Session.Output('Skip ' + tbl + '.' + col + ' : ' + oldDay + ' → ' + newDay + '  (' + e.description + ')');
+  }
+}
+
+function run() {
+  // 元素（最常用）
+  bumpDayKeepTime('t_object',  'CreatedDate',  19, 16);
+  bumpDayKeepTime('t_object',  'ModifiedDate', 19, 16);
+  bumpDayKeepTime('t_object',  'CreatedDate',  5, 18);
+  bumpDayKeepTime('t_object',  'ModifiedDate', 5, 18);
+
+  // 图表（存在才会生效，不存在会打印 Skip）
+  bumpDayKeepTime('t_diagram', 'CreatedDate',  19, 16);
+  bumpDayKeepTime('t_diagram', 'ModifiedDate', 19, 16);
+  bumpDayKeepTime('t_diagram', 'CreatedDate',  5, 18);
+  bumpDayKeepTime('t_diagram', 'ModifiedDate', 5, 18);
+
+  Session.Output('完成：已对可用的日期列执行 4→17、5→18，且保留时分秒。');
+}
+run();
+
+
+代码3：
+!INC Local Scripts.EAConstants-JScript
+
+function hasCol(tbl, col){
+  try { Repository.SQLQuery('SELECT TOP 1 ['+col+'] FROM ['+tbl+']'); return true; }
+  catch(e){ return false; }
+}
+
+// 将表的 Author 列批量设置为 yhx（仅当该列存在时执行）
+function setAuthorIfExists(tbl){
+  if (!hasCol(tbl, 'Author')) {
+    Session.Output('Skip '+tbl+'（无 Author 列）');
+    return;
+  }
+  try{
+    // 全量覆盖为 yhx；若只想改空/特定作者，可在 WHERE 子句加条件
+    Repository.Execute('UPDATE ['+tbl+'] SET [Author] = "yhx"');
+    Session.Output('OK   '+tbl+'.Author → yhx');
+  }catch(e){
+    Session.Output('Err  '+tbl+'.Author：'+e.description);
+  }
+}
+
+function run(){
+  // 最常用：元素与图表
+  setAuthorIfExists('t_object');     // 元素（类、用例等）
+  setAuthorIfExists('t_diagram');    // 图表/图
+
+  // 其他可能带 Author 的表（存在才会改，不存在会 Skip）
+  setAuthorIfExists('t_document');   // 内嵌文档
+  setAuthorIfExists('t_package');    // 包（有的库无 Author 列）
+  setAuthorIfExists('t_resource');   // 资源计划
+  setAuthorIfExists('t_maint');      // 维护项/问题
+  setAuthorIfExists('t_objecttests');// 测试
+  setAuthorIfExists('t_connector');  // 多数库无 Author，这里会自动 Skip
+
+  Session.Output('完成：Author 字段已尽可能统一为 keyl。建议随后做一次 Project Integrity Check。');
+}
+run();

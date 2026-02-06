@@ -1,0 +1,163 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <sys/wait.h>
+#include <fcntl.h>
+
+#define MAX_CMD_LEN 1024
+#define MAX_ARGS 128
+
+void print_prompt() {
+    char cwd[1024];
+    getcwd(cwd, sizeof(cwd));
+    printf("%s $ ", cwd);
+}
+
+// 解析重定向符号，返回重定向后的命令
+void parse_redirection(char *cmd, char **infile, char **outfile) {
+    *infile = NULL;
+    *outfile = NULL;
+
+    char *in = strchr(cmd, '<');
+    char *out = strchr(cmd, '>');
+
+    if (in) {
+        *in = '\0';
+        in++;
+        *infile = strtok(in, " \t");
+    }
+    if (out) {
+        *out = '\0';
+        out++;
+        *outfile = strtok(out, " \t");
+    }
+}
+
+void execute_single_command(char *cmd) {
+    char *infile = NULL, *outfile = NULL;
+    parse_redirection(cmd, &infile, &outfile);
+
+    char *args[MAX_ARGS];
+    int i = 0;
+    args[i] = strtok(cmd, " \t");
+    while (args[i] != NULL) {
+        i++;
+        args[i] = strtok(NULL, " \t");
+    }
+    // 内部命令判断
+    if (args[0] == NULL) return;
+    if (strcmp(args[0], "exit") == 0) exit(0);
+    if (strcmp(args[0], "help") == 0) {
+		printf("支持命令示例：\n");
+		printf("  内部命令: help, exit\n");
+		printf("  外部命令: ls, grep, cat, ./your_app 等\n");
+		printf("  管道示例: ls | grep txt\n");
+		printf("  重定向示例: ls > out.txt, sort < in.txt > out.txt\n");
+		return;
+	}
+    pid_t pid = fork();
+    if (pid == 0) {
+        // 输入重定向
+        if (infile) {
+            int fd = open(infile, O_RDONLY);
+            if (fd < 0) {
+                perror("打开输入文件失败");
+                exit(1);
+            }
+            dup2(fd, STDIN_FILENO);
+            close(fd);
+        }
+
+        // 输出重定向
+        if (outfile) {
+            int fd = open(outfile, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+            if (fd < 0) {
+                perror("打开输出文件失败");
+                exit(1);
+            }
+            dup2(fd, STDOUT_FILENO);
+            close(fd);
+        }
+
+        execvp(args[0], args);
+        perror("命令执行失败");
+        exit(1);
+    } else {
+        wait(NULL);
+    }
+}
+
+void execute_pipeline(char *cmdline) {
+    char *commands[10];
+    int num_cmds = 0;
+    commands[num_cmds] = strtok(cmdline, "|");
+    while (commands[num_cmds] != NULL) {
+        num_cmds++;
+        commands[num_cmds] = strtok(NULL, "|");
+    }
+    int pipefd[2], prev_fd = -1;
+    for (int i = 0; i < num_cmds; i++) {
+        pipe(pipefd);
+        pid_t pid = fork();
+        if (pid == 0) {
+            if (i < num_cmds - 1) dup2(pipefd[1], STDOUT_FILENO);
+            if (i > 0) dup2(prev_fd, STDIN_FILENO);
+            close(pipefd[0]);
+            close(pipefd[1]);
+            char *infile = NULL, *outfile = NULL;
+            parse_redirection(commands[i], &infile, &outfile);
+            char *args[MAX_ARGS];
+            int j = 0;
+            args[j] = strtok(commands[i], " \t");
+            while (args[j] != NULL) {
+                j++;
+                args[j] = strtok(NULL, " \t");
+            }
+            if (infile) {
+                int fd = open(infile, O_RDONLY);
+                if (fd < 0) {
+                    perror("打开输入文件失败");
+                    exit(1);
+                }
+                dup2(fd, STDIN_FILENO);
+                close(fd);
+            }
+            if (outfile) {
+                int fd = open(outfile, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+                if (fd < 0) {
+                    perror("打开输出文件失败");
+                    exit(1);
+                }
+                dup2(fd, STDOUT_FILENO);
+                close(fd);
+            }
+            execvp(args[0], args);
+            perror("命令执行失败");
+            exit(1);
+        } else {
+            wait(NULL);
+            close(pipefd[1]);
+            if (prev_fd != -1) close(prev_fd);
+            prev_fd = pipefd[0];
+        }
+    }
+}
+
+int main() {
+    char cmdline[MAX_CMD_LEN];
+
+    while (1) {
+        print_prompt();
+        if (fgets(cmdline, sizeof(cmdline), stdin) == NULL) break;
+        cmdline[strcspn(cmdline, "\n")] = '\0';
+
+        if (strchr(cmdline, '|')) {
+            execute_pipeline(cmdline);
+        } else {
+            execute_single_command(cmdline);
+        }
+    }
+
+    return 0;
+}

@@ -1,0 +1,123 @@
+// 头文件 shm_com_sem.h
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <semaphore.h>
+
+#define LINE_SIZE 256   
+#define NUM_LINES 16     
+
+// 用于创建信号量时的识别id
+const char* queue_mutex = "queue_mutex";
+const char* queue_empty = "queue_empty";
+const char* queue_full = "queue_full";
+
+// 生产者消费者公用的缓冲区，含读写指针line write和line read,以及缓冲数据区bufferINUM LINE][LINE SIZE],buffer[X]指向第x行信息，buffer[X][Y]指向X行信息的第Y个字符
+struct shared_mem_st {    
+    char buffer[NUM_LINES][LINE_SIZE];  
+    int line_write;       
+    int line_read;        
+};
+
+
+// Producer 
+#include <unistd.h>
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+#include <sys/shm.h>
+
+#include "shm_com_sem.h"
+
+int main(void)
+{
+    void *shared_memory = (void *)0;    //共享内存(缓冲区指针)
+    struct shared_mem_st *shared_stuff;
+    // 将无类型共享存储区转换为shared_mem_st类型的指针
+    char key_line[256];                 
+    int shmid;	//共享内存的id
+    sem_t *sem_queue, *sem_queue_empty, *sem_queue_full;
+    // 访问共享内存的互斥量、空缓冲区、满缓冲区信号量，皆为信号量指针
+    
+    // 此处编写获取共享内存区，并挂入内存的代码
+    // ...
+    
+    shared_stuff = (struct shared_mem_st*)shared_memory;	//将缓冲区指针装换为shared_mem_st类型
+    
+    //下面创建三个信号量
+    //...
+    
+    //读写指针初始化，开始时都指向等0行
+    shared_stuff->line_write = 0;      
+    shared_stuff->line_read = 0;    
+    
+    //不断从控制台读入按键输入的字符行
+    //Read and put input into buffer
+    while(1){
+        //提示可以输入，并用gets)读入按键行到keyline中
+        printf("Enter your text('quit' for exit): ");
+        gets(key_line); 
+        
+        //如果键入"quit"则退出
+        if(strcmp(shared_stuff->buffer[shared_stuff->line write], "quit") == 0){
+            break;
+        }
+        
+        // 将输入的行写入缓冲区，要有信号量操作
+        // ...
+    }
+    
+    // 因键入"quit"从前面while()循环中挑出到此处，程序退出前，释放信号量
+    // 释放信号量， 结束共享内存在本进程的挂载映象，删除共享内存区域
+    // ...
+}
+
+
+
+// Customer 
+#include <unistd.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/shm.h>
+#include "shm_com_sem.h"
+    
+int main()
+{
+    void *shared_memory = (void *)0;
+    struct shared_mem_st *shared_stuff;
+    int shmid;
+    int num_read;
+    pid_t fork_result;
+    sem_t *sem_queue, *sem_queue_empty, *sem_queue_full;
+    
+    // 获取共享内存区，并挂入内存
+    // ...
+    
+    // 将绥冲区指针转化为shared_mem_st类型
+    shared_stuff = (struct shared_mem_st *)shared_memory;
+    
+    // 获取producer创建的三个信号量，根据名字"queue_mutex" "queue_empty"和“queue_full"来识别
+    // ...
+    
+    // 创建了两个进程
+    fork_result = fork();
+    if(fork_result == -1){
+        fprintf(stderr, "Fork failure\n");
+    }
+    if(fork_result == 0){  //子进程
+        while(1){
+            // 信号量操作，打印消费内容及进程号，发现 quit 退出
+            // ...
+        }
+        // 释放信号量
+        // ...
+    } else { // 父进程操作，与子进程相似
+        while(1){
+            // 信号量操作，打印消费内容及进程号，发现 quit 退出
+            // ...
+        }
+        // 释放信号量
+        // ...
+    }
+    exit(EXIT_SUCCESS);
+}
